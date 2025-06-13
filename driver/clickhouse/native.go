@@ -17,11 +17,11 @@ type nativeConn struct {
 }
 
 // Ensure nativeConn implements the octobe.Driver interface.
-var _ octobe.Driver[nativeConn, NativeConfig, Builder] = &nativeConn{}
+var _ octobe.Driver[nativeConn, config, Builder] = &nativeConn{}
 
 // OpenNative creates a new database connection and returns a driver with the specified types.
-func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, NativeConfig, Builder] {
-	return func() (octobe.Driver[nativeConn, NativeConfig, Builder], error) {
+func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, config, Builder] {
+	return func() (octobe.Driver[nativeConn, config, Builder], error) {
 		conn, err := clickhouse.Open(opts)
 		if err != nil {
 			return nil, err
@@ -34,8 +34,8 @@ func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, NativeConfig, 
 }
 
 // OpenNativeWithConn creates a new database connection using an existing connection.
-func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, NativeConfig, Builder] {
-	return func() (octobe.Driver[nativeConn, NativeConfig, Builder], error) {
+func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, config, Builder] {
+	return func() (octobe.Driver[nativeConn, config, Builder], error) {
 		if c == nil {
 			return nil, errors.New("conn is nil")
 		}
@@ -47,8 +47,8 @@ func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, NativeConfig, Buil
 }
 
 // Begin starts a new session with the database and returns a Session instance.
-func (d *nativeConn) Begin(ctx context.Context, opts ...octobe.Option[NativeConfig]) (octobe.Session[Builder], error) {
-	var cfg NativeConfig
+func (d *nativeConn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe.Session[Builder], error) {
+	var cfg config
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -73,7 +73,7 @@ func (d *nativeConn) Ping(ctx context.Context) error {
 // nativeSession holds nativeSession context, representing a series of related queries.
 type nativeSession struct {
 	ctx       context.Context
-	cfg       NativeConfig
+	cfg       config
 	d         *nativeConn
 	committed bool
 }

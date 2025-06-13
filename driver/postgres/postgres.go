@@ -7,6 +7,12 @@ import (
 	"github.com/ponrove/octobe"
 )
 
+// Driver is a type alias for octobe.Driver with specific types for conn, config, and Builder.
+type PGXDriver octobe.Driver[pgxConn, pgxConfig, Builder]
+
+// Driver is a type alias for octobe.Driver with specific types for conn, config, and Builder.
+type SQLDriver octobe.Driver[sqlConn, sqlConfig, Builder]
+
 // Builder is a function signature used for building queries with the pgx driver.
 type Builder func(query string) Segment
 
