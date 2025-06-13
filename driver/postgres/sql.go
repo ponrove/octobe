@@ -91,6 +91,14 @@ func (d *sqlConn) Close(_ context.Context) error {
 	return nil
 }
 
+// Ping will ping the database connection to check if it is alive.
+func (d *sqlConn) Ping(ctx context.Context) error {
+	if d.sqlDB == nil {
+		return errors.New("connection is nil")
+	}
+	return d.sqlDB.PingContext(ctx)
+}
+
 // sqlSession is a struct that holds sqlSession context, a sqlSession should be considered a series of queries that are related
 // to each other. A sqlSession can be transactional or non-transactional, if it is transactional, it will enforce the usage
 // of commit and rollback. If it is non-transactional, it will not enforce the usage of commit and rollback.

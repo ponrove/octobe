@@ -102,6 +102,14 @@ func (d *pgxpoolConn) Close(_ context.Context) error {
 	return nil
 }
 
+// Ping checks the connection to the database.
+func (d *pgxpoolConn) Ping(ctx context.Context) error {
+	if d.pool == nil {
+		return errors.New("pool is nil")
+	}
+	return d.pool.Ping(ctx)
+}
+
 // session holds session context and manages a series of related queries.
 type pgxpoolSession struct {
 	ctx       context.Context
@@ -116,6 +124,9 @@ var _ octobe.Session[Builder] = &pgxpoolSession{}
 
 // Commit commits a transaction if the session is transactional.
 func (s *pgxpoolSession) Commit() error {
+	if s.committed {
+		return errors.New("cannot commit a session that has already been committed")
+	}
 	if s.cfg.txOptions == nil {
 		return errors.New("cannot commit without transaction")
 	}

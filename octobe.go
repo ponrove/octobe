@@ -14,6 +14,7 @@ type Option[CONFIG any] func(cfg *CONFIG)
 type Driver[DRIVER any, CONFIG any, BUILDER any] interface {
 	Begin(ctx context.Context, opts ...Option[CONFIG]) (Session[BUILDER], error)
 	Close(ctx context.Context) error
+	Ping(ctx context.Context) error
 }
 
 // Open is a signature that can be used for opening a driver, it should always return a driver with set signature of

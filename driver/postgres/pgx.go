@@ -129,7 +129,17 @@ func (d *pgxConn) Begin(ctx context.Context, opts ...octobe.Option[pgxConfig]) (
 
 // Close closes the database connection.
 func (d *pgxConn) Close(ctx context.Context) error {
+	if d.conn == nil {
+		return errors.New("connection is nil")
+	}
 	return d.conn.Close(ctx)
+}
+
+func (d *pgxConn) Ping(ctx context.Context) error {
+	if d.conn == nil {
+		return errors.New("connection is nil")
+	}
+	return d.conn.Ping(ctx)
 }
 
 // pgxSession holds pgxSession context, representing a series of related queries.

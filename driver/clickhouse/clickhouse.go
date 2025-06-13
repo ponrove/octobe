@@ -1,28 +1,15 @@
 package clickhouse
 
 import (
-	"database/sql"
-
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/ponrove/octobe"
 )
 
 // Builder is a function signature used for building queries with the clickhouse driver.
 type Builder func(query string) Segment
 
-// ClickhouseTxOptions holds the options for a transaction in the sql driver.
-type ClickhouseTxOptions sql.TxOptions
-
-// clickhouseConfig defines various configurations possible for the clickhouse driver.
-type clickhouseConfig struct {
-	txOptions *ClickhouseTxOptions
-}
-
-// WithClickhouseTxOptions enables the use of a transaction for the session.
-func WithClickhouseTxOptions(options ClickhouseTxOptions) octobe.Option[clickhouseConfig] {
-	return func(c *clickhouseConfig) {
-		c.txOptions = &options
-	}
-}
+// nativeConfig defines various configurations possible for the native driver.
+type nativeConfig struct{}
 
 // Handler is a signature type for a handler. The handler receives a builder of the specific driver and returns a result and an error.
 type Handler[RESULT any] func(Builder) (RESULT, error)
@@ -35,39 +22,28 @@ func Execute[RESULT any](session octobe.BuilderSession[Builder], f Handler[RESUL
 // Segment is an interface that represents a specific query that can be run only once. It keeps track of the query,
 // arguments, and execution state.
 type Segment interface {
+	Contributors() []string
+	ServerVersion() (*ServerVersion, error)
+	Select(dest any) error
 	Arguments(args ...any) Segment
-	Exec() (ExecResult, error)
-	QueryRow(dest ...any) error
+	Exec() error
 	Query(cb func(Rows) error) error
+	QueryRow(dest ...any) error
+	PrepareBatch(opts ...PrepareBatchOption) (Batch, error)
+	AsyncInsert(wait bool, args ...any) error
 }
 
-// ExecResult is a struct that holds the result of an execution, specifically the number of rows affected by the query.
-type ExecResult struct {
-	RowsAffected int64
-}
+// ExecResult is a struct that holds the result of an execution, such as the number of rows affected.
+type Rows = driver.Rows
 
-// Rows is an interface that represents a set of rows returned by a query. It provides methods to iterate over the rows
-// and read their values. It is compatible with sql.Rows types, allowing for flexibility in handling
-// database results.
-type Rows interface {
-	// Err returns any error that occurred while reading. Err must only be called after the Rows is closed (either by
-	// calling Close or by Next returning false). If it is called early it may return nil even if there was an error
-	// executing the query.
-	Err() error
+// Row is a struct that holds the result of a single row query.
+type Row = driver.Row
 
-	// Next prepares the next row for reading. It returns true if there is another
-	// row and false if no more rows are available or a fatal error has occurred.
-	// It automatically closes rows when all rows are read.
-	//
-	// Callers should check rows.Err() after rows.Next() returns false to detect
-	// whether result-set reading ended prematurely due to an error.
-	Next() bool
+// ServerVersion is a struct that holds the version of the ClickHouse server.
+type ServerVersion = driver.ServerVersion
 
-	// Scan reads the values from the current row into dest values positionally.
-	// dest can include pointers to core types, values implementing the Scanner
-	// interface, and nil. nil will skip the value entirely. It is an error to
-	// call Scan without first calling Next() and checking that it returned true.
-	Scan(dest ...any) error
-}
+// PrepareBatchOption is a function signature that allows setting options for preparing a batch.
+type PrepareBatchOption = driver.PrepareBatchOption
 
-var _ Rows = (*sql.Rows)(nil)
+// Batch is a type that represents a batch of queries to be executed together.
+type Batch = driver.Batch
