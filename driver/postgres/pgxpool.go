@@ -37,11 +37,11 @@ type pgxpoolConn struct {
 }
 
 // Ensure conn implements the octobe.Driver interface.
-var _ octobe.Driver[pgxpoolConn, config, Builder] = &pgxpoolConn{}
+var _ octobe.Driver[pgxpoolConn, pgxConfig, Builder] = &pgxpoolConn{}
 
 // Open creates a new database connection and returns a driver with the specified types.
-func OpenPGXPool(ctx context.Context, dsn string) octobe.Open[pgxpoolConn, config, Builder] {
-	return func() (octobe.Driver[pgxpoolConn, config, Builder], error) {
+func OpenPGXPool(ctx context.Context, dsn string) octobe.Open[pgxpoolConn, pgxConfig, Builder] {
+	return func() (octobe.Driver[pgxpoolConn, pgxConfig, Builder], error) {
 		pool, err := pgxpool.New(ctx, dsn)
 		if err != nil {
 			return nil, err
@@ -54,8 +54,8 @@ func OpenPGXPool(ctx context.Context, dsn string) octobe.Open[pgxpoolConn, confi
 }
 
 // OpenWithPool creates a new database connection using an existing connection pool.
-func OpenPGXPoolWithPool(pool PGXPool) octobe.Open[pgxpoolConn, config, Builder] {
-	return func() (octobe.Driver[pgxpoolConn, config, Builder], error) {
+func OpenPGXPoolWithPool(pool PGXPool) octobe.Open[pgxpoolConn, pgxConfig, Builder] {
+	return func() (octobe.Driver[pgxpoolConn, pgxConfig, Builder], error) {
 		if pool == nil {
 			return nil, errors.New("pool is nil")
 		}
@@ -67,8 +67,8 @@ func OpenPGXPoolWithPool(pool PGXPool) octobe.Open[pgxpoolConn, config, Builder]
 }
 
 // Begin starts a new session with the database and returns a Session instance.
-func (d *pgxpoolConn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe.Session[Builder], error) {
-	var cfg config
+func (d *pgxpoolConn) Begin(ctx context.Context, opts ...octobe.Option[pgxConfig]) (octobe.Session[Builder], error) {
+	var cfg pgxConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -105,7 +105,7 @@ func (d *pgxpoolConn) Close(_ context.Context) error {
 // session holds session context and manages a series of related queries.
 type pgxpoolSession struct {
 	ctx       context.Context
-	cfg       config
+	cfg       pgxConfig
 	tx        pgx.Tx
 	d         *pgxpoolConn
 	committed bool
@@ -136,7 +136,7 @@ func (s *pgxpoolSession) Rollback() error {
 // Builder returns a new builder for building queries.
 func (s *pgxpoolSession) Builder() Builder {
 	return func(query string) Segment {
-		return &PGXPoolSegment{
+		return &pgxpoolSegment{
 			query: query,
 			args:  nil,
 			used:  false,
@@ -148,7 +148,7 @@ func (s *pgxpoolSession) Builder() Builder {
 }
 
 // Segment represents a specific query that can be run only once.
-type PGXPoolSegment struct {
+type pgxpoolSegment struct {
 	query string          // SQL query to be executed
 	args  []any           // Argument values for the query
 	used  bool            // Indicates if the Segment has been executed
@@ -157,31 +157,47 @@ type PGXPoolSegment struct {
 	ctx   context.Context // Context to interrupt a query
 }
 
+var _ Segment = &pgxpoolSegment{}
+
 // use sets used to true after a Segment has been performed.
-func (s *PGXPoolSegment) use() {
+func (s *pgxpoolSegment) use() {
 	s.used = true
 }
 
 // Arguments sets the arguments for the query.
-func (s *PGXPoolSegment) Arguments(args ...any) Segment {
+func (s *pgxpoolSegment) Arguments(args ...any) Segment {
 	s.args = args
 	return s
 }
 
 // Exec executes a query for inserts or updates.
-func (s *PGXPoolSegment) Exec() (pgconn.CommandTag, error) {
+func (s *pgxpoolSegment) Exec() (ExecResult, error) {
 	if s.used {
-		return pgconn.CommandTag{}, octobe.ErrAlreadyUsed
+		return ExecResult{}, octobe.ErrAlreadyUsed
 	}
 	defer s.use()
 	if s.tx == nil {
-		return s.d.pool.Exec(s.ctx, s.query, s.args...)
+		res, err := s.d.pool.Exec(s.ctx, s.query, s.args...)
+		if err != nil {
+			return ExecResult{}, err
+		}
+
+		return ExecResult{
+			RowsAffected: res.RowsAffected(),
+		}, nil
 	}
-	return s.tx.Exec(s.ctx, s.query, s.args...)
+
+	res, err := s.tx.Exec(s.ctx, s.query, s.args...)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	return ExecResult{
+		RowsAffected: res.RowsAffected(),
+	}, nil
 }
 
 // QueryRow returns one result and puts it into destination pointers.
-func (s *PGXPoolSegment) QueryRow(dest ...any) error {
+func (s *pgxpoolSegment) QueryRow(dest ...any) error {
 	if s.used {
 		return octobe.ErrAlreadyUsed
 	}
@@ -193,7 +209,7 @@ func (s *PGXPoolSegment) QueryRow(dest ...any) error {
 }
 
 // Query performs a normal query against the database that returns rows.
-func (s *PGXPoolSegment) Query(cb func(pgx.Rows) error) error {
+func (s *pgxpoolSegment) Query(cb func(Rows) error) error {
 	if s.used {
 		return octobe.ErrAlreadyUsed
 	}

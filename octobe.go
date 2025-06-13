@@ -98,5 +98,6 @@ func (o *Octobe[DRIVER, CONFIG, BUILDER]) StartTransaction(ctx context.Context, 
 	}
 
 	// No error, commit the transaction
-	return session.Commit()
+	err = session.Commit()
+	return err
 }

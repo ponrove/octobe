@@ -55,7 +55,7 @@ func TestPGXPoolWithTxInsideStartTransaction(t *testing.T) {
 		assert.Equal(t, name, product2.Name)
 		assert.NotZero(t, product2.ID)
 		return nil
-	}, postgres.WithTransaction(postgres.TxOptions{}))
+	}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 	assert.NoError(t, err)
 
@@ -86,7 +86,7 @@ func TestPGXPoolWithTx(t *testing.T) {
 		t.FailNow()
 	}
 
-	session, err := ob.Begin(ctx, postgres.WithTransaction(postgres.TxOptions{}))
+	session, err := ob.Begin(ctx, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -199,7 +199,7 @@ func TestPGXPoolWithTxInsideStartTransactionRollbackOnError(t *testing.T) {
 			t.FailNow()
 		}
 		return expectedErr
-	}, postgres.WithTransaction(postgres.TxOptions{}))
+	}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 	assert.Equal(t, expectedErr, err)
 
@@ -242,7 +242,7 @@ func TestPGXPoolWithTxInsideStartTransactionRollbackOnPanic(t *testing.T) {
 			t.FailNow()
 		}
 		panic(panicMsg)
-	}, postgres.WithTransaction(postgres.TxOptions{}))
+	}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 }
 
 func TestPGXPoolWithTxManualRollback(t *testing.T) {
@@ -265,7 +265,7 @@ func TestPGXPoolWithTxManualRollback(t *testing.T) {
 		t.FailNow()
 	}
 
-	session, err := ob.Begin(ctx, postgres.WithTransaction(postgres.TxOptions{}))
+	session, err := ob.Begin(ctx, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -453,14 +453,14 @@ func TestPGXPoolSegmentUsedTwice(t *testing.T) {
 
 		handler := func(builder postgres.Builder) (octobe.Void, error) {
 			query := builder(`SELECT`)
-			err := query.Query(func(rows pgx.Rows) error {
+			err := query.Query(func(rows postgres.Rows) error {
 				return nil
 			})
 			if err != nil {
 				return nil, err
 			}
 			// Use it again
-			err = query.Query(func(rows pgx.Rows) error {
+			err = query.Query(func(rows postgres.Rows) error {
 				return nil
 			})
 			return nil, err
@@ -498,7 +498,7 @@ func TestPGXPoolBeginError(t *testing.T) {
 		t.FailNow()
 	}
 
-	_, err = ob.Begin(ctx, postgres.WithTransaction(postgres.TxOptions{}))
+	_, err = ob.Begin(ctx, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 	assert.ErrorIs(t, err, expectedErr)
 
 	err = ob.Close(ctx)
@@ -523,7 +523,7 @@ func TestPGXPoolCommitError(t *testing.T) {
 		t.FailNow()
 	}
 
-	session, err := ob.Begin(ctx, postgres.WithTransaction(postgres.TxOptions{}))
+	session, err := ob.Begin(ctx, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -596,7 +596,7 @@ func TestPGXPoolSegmentExecError(t *testing.T) {
 				return nil, err
 			})
 			return err
-		}, postgres.WithTransaction(postgres.TxOptions{}))
+		}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 		assert.ErrorIs(t, err, expectedErr)
 
@@ -669,7 +669,7 @@ func TestPGXPoolSegmentQueryRowError(t *testing.T) {
 				return p, err
 			})
 			return err
-		}, postgres.WithTransaction(postgres.TxOptions{}))
+		}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 		assert.ErrorIs(t, err, expectedErr)
 
@@ -704,7 +704,7 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 
 		_, err = postgres.Execute(session, func(builder postgres.Builder) (octobe.Void, error) {
 			query := builder("SELECT")
-			err := query.Query(func(rows pgx.Rows) error { return nil })
+			err := query.Query(func(rows postgres.Rows) error { return nil })
 			return nil, err
 		})
 		assert.ErrorIs(t, err, expectedErr)
@@ -736,11 +736,11 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.StartTransaction(ctx, func(session octobe.BuilderSession[postgres.Builder]) error {
 			_, err := postgres.Execute(session, func(builder postgres.Builder) (octobe.Void, error) {
 				query := builder("SELECT")
-				err := query.Query(func(rows pgx.Rows) error { return nil })
+				err := query.Query(func(rows postgres.Rows) error { return nil })
 				return nil, err
 			})
 			return err
-		}, postgres.WithTransaction(postgres.TxOptions{}))
+		}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 		assert.ErrorIs(t, err, expectedErr)
 
@@ -773,7 +773,7 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 
 		_, err = postgres.Execute(session, func(builder postgres.Builder) (octobe.Void, error) {
 			query := builder("SELECT")
-			err := query.Query(func(rows pgx.Rows) error { return expectedErr })
+			err := query.Query(func(rows postgres.Rows) error { return expectedErr })
 			return nil, err
 		})
 		assert.ErrorIs(t, err, expectedErr)
@@ -805,11 +805,11 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.StartTransaction(ctx, func(session octobe.BuilderSession[postgres.Builder]) error {
 			_, err := postgres.Execute(session, func(builder postgres.Builder) (octobe.Void, error) {
 				query := builder("SELECT")
-				err := query.Query(func(rows pgx.Rows) error { return expectedErr })
+				err := query.Query(func(rows postgres.Rows) error { return expectedErr })
 				return nil, err
 			})
 			return err
-		}, postgres.WithTransaction(postgres.TxOptions{}))
+		}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
 
 		assert.ErrorIs(t, err, expectedErr)
 

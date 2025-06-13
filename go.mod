@@ -3,6 +3,7 @@ module github.com/ponrove/octobe
 go 1.24.3
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/pashagolub/pgxmock/v4 v4.7.0
 	github.com/stretchr/testify v1.9.0
