@@ -9,9 +9,6 @@ import (
 	"github.com/ponrove/octobe"
 )
 
-// Driver represents the Octobe driver for the pgx connection pool.
-type Driver octobe.Driver[conn, config, Builder]
-
 // PGXConn defines the interface for a PGX postgres connection.
 type PGXConn interface {
 	Close(context.Context) error
@@ -30,31 +27,30 @@ type PGXConn interface {
 	CopyFrom(context.Context, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error)
 }
 
-// Ensure postgres.PGXConn implements the Conn interface.
-var _ PGXConn = &pgx.Conn{}
+var _ PGXConn = &pgx.Conn{} // Ensure pgx.Conn implements the PGXConn interface.
 
 // conn holds the connection and default configuration for the pgx driver.
-type conn struct {
+type pgxConn struct {
 	conn PGXConn
 }
 
 // Ensure conn implements the Octobe Driver interface.
-var _ octobe.Driver[conn, config, Builder] = &conn{}
+var _ octobe.Driver[pgxConn, config, Builder] = &pgxConn{}
 
 // OpenPGX creates a new database connection and returns a driver with the specified types.
 // It takes a context and a data source name (DSN) as parameters.
 // The returned function, when called, initializes a new connection using the provided DSN.
 // If the connection creation fails, it returns an error.
 // Otherwise, it returns a new conn instance with the created connection.
-func OpenPGX(ctx context.Context, dsn string) octobe.Open[conn, config, Builder] {
-	return func() (octobe.Driver[conn, config, Builder], error) {
-		pgxConn, err := pgx.Connect(ctx, dsn)
+func OpenPGX(ctx context.Context, dsn string) octobe.Open[pgxConn, config, Builder] {
+	return func() (octobe.Driver[pgxConn, config, Builder], error) {
+		conn, err := pgx.Connect(ctx, dsn)
 		if err != nil {
 			return nil, err
 		}
 
-		return &conn{
-			conn: pgxConn,
+		return &pgxConn{
+			conn: conn,
 		}, nil
 	}
 }
@@ -69,15 +65,15 @@ type ParseConfigOptions struct {
 // The returned function, when called, initializes a new connection using the provided DSN and options.
 // If the connection creation fails, it returns an error.
 // Otherwise, it returns a new conn instance with the created connection.
-func OpenWithOptions(ctx context.Context, dsn string, options ParseConfigOptions) octobe.Open[conn, config, Builder] {
-	return func() (octobe.Driver[conn, config, Builder], error) {
-		pgxConn, err := pgx.ConnectWithOptions(ctx, dsn, pgx.ParseConfigOptions{ParseConfigOptions: options.ParseConfigOptions})
+func OpenPGXWithOptions(ctx context.Context, dsn string, options ParseConfigOptions) octobe.Open[pgxConn, config, Builder] {
+	return func() (octobe.Driver[pgxConn, config, Builder], error) {
+		conn, err := pgx.ConnectWithOptions(ctx, dsn, pgx.ParseConfigOptions{ParseConfigOptions: options.ParseConfigOptions})
 		if err != nil {
 			return nil, err
 		}
 
-		return &conn{
-			conn: pgxConn,
+		return &pgxConn{
+			conn: conn,
 		}, nil
 	}
 }
@@ -86,30 +82,15 @@ func OpenWithOptions(ctx context.Context, dsn string, options ParseConfigOptions
 // It takes an existing connection as a parameter.
 // The returned function, when called, returns a new conn instance with the provided connection.
 // If the provided connection is nil, it returns an error.
-func OpenPGXWithConn(c PGXConn) octobe.Open[conn, config, Builder] {
-	return func() (octobe.Driver[conn, config, Builder], error) {
+func OpenPGXWithConn(c PGXConn) octobe.Open[pgxConn, config, Builder] {
+	return func() (octobe.Driver[pgxConn, config, Builder], error) {
 		if c == nil {
 			return nil, errors.New("conn is nil")
 		}
 
-		return &conn{
+		return &pgxConn{
 			conn: c,
 		}, nil
-	}
-}
-
-// config defines various configurations possible for the pgx driver.
-type config struct {
-	txOptions *TxOptions
-}
-
-// TxOptions holds the options for a transaction.
-type TxOptions pgx.TxOptions
-
-// WithTransaction enables the use of a transaction for the session, enforcing the usage of commit and rollback.
-func WithTransaction(options TxOptions) octobe.Option[config] {
-	return func(c *config) {
-		c.txOptions = &options
 	}
 }
 
@@ -117,7 +98,7 @@ func WithTransaction(options TxOptions) octobe.Option[config] {
 // It takes a context and optional configuration options as parameters.
 // If transaction options are provided, it begins a transaction with those options, otherwise it starts a
 // non-transactional session. If the transaction initiation fails, it returns an error.
-func (d *conn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe.Session[Builder], error) {
+func (d *pgxConn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe.Session[Builder], error) {
 	var cfg config
 	for _, opt := range opts {
 		opt(&cfg)
@@ -138,7 +119,7 @@ func (d *conn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe
 		return nil, err
 	}
 
-	return &session{
+	return &pgxSession{
 		ctx: ctx,
 		cfg: cfg,
 		tx:  tx,
@@ -147,26 +128,30 @@ func (d *conn) Begin(ctx context.Context, opts ...octobe.Option[config]) (octobe
 }
 
 // Close closes the database connection.
-func (d *conn) Close(ctx context.Context) error {
+func (d *pgxConn) Close(ctx context.Context) error {
 	return d.conn.Close(ctx)
 }
 
-// session holds session context, representing a series of related queries.
-// A session can be transactional or non-transactional. If transactional, it enforces the usage of commit and rollback.
-// A session is not thread-safe and should only be used in one thread at a time.
-type session struct {
+// pgxSession holds pgxSession context, representing a series of related queries.
+// A pgxSession can be transactional or non-transactional. If transactional, it enforces the usage of commit and rollback.
+// A pgxSession is not thread-safe and should only be used in one thread at a time.
+type pgxSession struct {
 	ctx       context.Context
 	cfg       config
 	tx        pgx.Tx
-	d         *conn
+	d         *pgxConn
 	committed bool
 }
 
 // Ensure session implements the Octobe Session interface.
-var _ octobe.Session[Builder] = &session{}
+var _ octobe.Session[Builder] = &pgxSession{}
 
 // Commit commits a transaction. This only works if the session is transactional.
-func (s *session) Commit() error {
+func (s *pgxSession) Commit() error {
+	if s.committed {
+		return errors.New("cannot commit a session that has already been committed")
+	}
+
 	if s.cfg.txOptions == nil {
 		return errors.New("cannot commit without transaction")
 	}
@@ -177,20 +162,17 @@ func (s *session) Commit() error {
 }
 
 // Rollback rolls back a transaction. This only works if the session is transactional.
-func (s *session) Rollback() error {
+func (s *pgxSession) Rollback() error {
 	if s.cfg.txOptions == nil {
 		return errors.New("cannot rollback without transaction")
 	}
 	return s.tx.Rollback(s.ctx)
 }
 
-// Builder is a function signature used for building queries with the pgx driver.
-type Builder func(query string) Segment
-
 // Builder returns a new builder for building queries.
-func (s *session) Builder() Builder {
+func (s *pgxSession) Builder() Builder {
 	return func(query string) Segment {
-		return Segment{
+		return &PGXSegment{
 			query: query,
 			args:  nil,
 			used:  false,
@@ -201,37 +183,29 @@ func (s *session) Builder() Builder {
 	}
 }
 
-// Handler is a signature type for a handler. The handler receives a builder of the specific driver and returns a result and an error.
-type Handler[RESULT any] func(Builder) (RESULT, error)
-
-// Execute executes a handler with a session builder, injecting the builder of the driver into the handler.
-func Execute[RESULT any](session octobe.BuilderSession[Builder], f Handler[RESULT]) (RESULT, error) {
-	return f(session.Builder())
-}
-
 // Segment represents a specific query that can be run only once. It keeps track of the query, arguments, and execution state.
-type Segment struct {
+type PGXSegment struct {
 	query string          // SQL query to be executed
 	args  []any           // Argument values
 	used  bool            // Indicates if this Segment has been executed
 	tx    pgx.Tx          // Database transaction, initiated by BeginTx
-	d     *conn           // Driver used for the session
+	d     *pgxConn        // Driver used for the session
 	ctx   context.Context // Context to interrupt a query
 }
 
 // use sets the Segment as used after it has been performed.
-func (s *Segment) use() {
+func (s *PGXSegment) use() {
 	s.used = true
 }
 
 // Arguments sets the arguments to be used in the query.
-func (s *Segment) Arguments(args ...any) *Segment {
+func (s *PGXSegment) Arguments(args ...any) Segment {
 	s.args = args
 	return s
 }
 
 // Exec executes a query, typically used for inserts or updates.
-func (s *Segment) Exec() (pgconn.CommandTag, error) {
+func (s *PGXSegment) Exec() (pgconn.CommandTag, error) {
 	if s.used {
 		return pgconn.CommandTag{}, octobe.ErrAlreadyUsed
 	}
@@ -243,7 +217,7 @@ func (s *Segment) Exec() (pgconn.CommandTag, error) {
 }
 
 // QueryRow returns one result and puts it into destination pointers.
-func (s *Segment) QueryRow(dest ...any) error {
+func (s *PGXSegment) QueryRow(dest ...any) error {
 	if s.used {
 		return octobe.ErrAlreadyUsed
 	}
@@ -255,7 +229,7 @@ func (s *Segment) QueryRow(dest ...any) error {
 }
 
 // Query performs a normal query against the database that returns rows.
-func (s *Segment) Query(cb func(pgx.Rows) error) error {
+func (s *PGXSegment) Query(cb func(pgx.Rows) error) error {
 	if s.used {
 		return octobe.ErrAlreadyUsed
 	}
