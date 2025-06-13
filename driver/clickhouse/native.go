@@ -17,11 +17,11 @@ type nativeConn struct {
 }
 
 // Ensure nativeConn implements the octobe.Driver interface.
-var _ octobe.Driver[nativeConn, nativeConfig, Builder] = &nativeConn{}
+var _ octobe.Driver[nativeConn, NativeConfig, Builder] = &nativeConn{}
 
 // OpenNative creates a new database connection and returns a driver with the specified types.
-func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, nativeConfig, Builder] {
-	return func() (octobe.Driver[nativeConn, nativeConfig, Builder], error) {
+func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, NativeConfig, Builder] {
+	return func() (octobe.Driver[nativeConn, NativeConfig, Builder], error) {
 		conn, err := clickhouse.Open(opts)
 		if err != nil {
 			return nil, err
@@ -34,8 +34,8 @@ func OpenNative(opts *clickhouse.Options) octobe.Open[nativeConn, nativeConfig, 
 }
 
 // OpenNativeWithConn creates a new database connection using an existing connection.
-func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, nativeConfig, Builder] {
-	return func() (octobe.Driver[nativeConn, nativeConfig, Builder], error) {
+func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, NativeConfig, Builder] {
+	return func() (octobe.Driver[nativeConn, NativeConfig, Builder], error) {
 		if c == nil {
 			return nil, errors.New("conn is nil")
 		}
@@ -47,8 +47,8 @@ func OpenNativeWithConn(c NativeConn) octobe.Open[nativeConn, nativeConfig, Buil
 }
 
 // Begin starts a new session with the database and returns a Session instance.
-func (d *nativeConn) Begin(ctx context.Context, opts ...octobe.Option[nativeConfig]) (octobe.Session[Builder], error) {
-	var cfg nativeConfig
+func (d *nativeConn) Begin(ctx context.Context, opts ...octobe.Option[NativeConfig]) (octobe.Session[Builder], error) {
+	var cfg NativeConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -73,7 +73,7 @@ func (d *nativeConn) Ping(ctx context.Context) error {
 // nativeSession holds nativeSession context, representing a series of related queries.
 type nativeSession struct {
 	ctx       context.Context
-	cfg       nativeConfig
+	cfg       NativeConfig
 	d         *nativeConn
 	committed bool
 }
@@ -81,14 +81,16 @@ type nativeSession struct {
 // Ensure session implements the Octobe Session interface.
 var _ octobe.Session[Builder] = &nativeSession{}
 
-// Commit commits a transaction. This only works if the session is transactional.
+// Commit commits a transaction. This is a no-op for ClickHouse as it does not support transactions in the same way as
+// other databases.
 func (s *nativeSession) Commit() error {
-	return errors.New("clickhouse does not support transactions")
+	return nil
 }
 
-// Rollback rolls back a transaction. This only works if the session is transactional.
+// Rollback rolls back a transaction, this is a no-op for clickhouse as it does not support transactions in the same way
+// as other databases.
 func (s *nativeSession) Rollback() error {
-	return errors.New("clickhouse does not support transactions")
+	return nil
 }
 
 // Builder returns a new builder for building queries.
@@ -126,12 +128,12 @@ func (s *nativeSegment) Arguments(args ...any) Segment {
 	return s
 }
 
-// Query returns the query string that will be executed.
+// Contributors returns the list of contributors for the driver.
 func (s *nativeSegment) Contributors() []string {
 	return s.d.conn.Contributors()
 }
 
-// Query returns the query string that will be executed.
+// ServerVersion returns the underlying database server version.
 func (s *nativeSegment) ServerVersion() (*ServerVersion, error) {
 	return s.d.conn.ServerVersion()
 }
@@ -152,13 +154,8 @@ func (s *nativeSegment) Exec() error {
 		return octobe.ErrAlreadyUsed
 	}
 	defer s.use()
-	var err error
-	err = s.d.conn.Exec(s.ctx, s.query, s.args...)
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return s.d.conn.Exec(s.ctx, s.query, s.args...)
 }
 
 // Query performs a normal query against the database that returns rows.

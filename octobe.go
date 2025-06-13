@@ -50,6 +50,11 @@ func (ob *Octobe[DRIVER, CONFIG, BUILDER]) Close(ctx context.Context) error {
 	return ob.driver.Close(ctx)
 }
 
+// Ping checks the connection to the database.
+func (ob *Octobe[DRIVER, CONFIG, BUILDER]) Ping(ctx context.Context) error {
+	return ob.driver.Ping(ctx)
+}
+
 // Session is a signature that has a
 type Session[BUILDER any] interface {
 	// Commit will commit the transaction.

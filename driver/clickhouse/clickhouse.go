@@ -8,8 +8,8 @@ import (
 // Builder is a function signature used for building queries with the clickhouse driver.
 type Builder func(query string) Segment
 
-// nativeConfig defines various configurations possible for the native driver.
-type nativeConfig struct{}
+// NativeConfig defines various configurations possible for the native driver.
+type NativeConfig struct{}
 
 // Handler is a signature type for a handler. The handler receives a builder of the specific driver and returns a result and an error.
 type Handler[RESULT any] func(Builder) (RESULT, error)
