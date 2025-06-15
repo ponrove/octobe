@@ -188,15 +188,3 @@ func TestMock(t *testing.T) {
 		require.ErrorIs(t, err, ErrNoExpectation)
 	})
 }
-
-// GetRowsForTesting is a helper method for testing to get the raw rows data.
-// This method should be available in your test files or in the mock itself.
-func GetRowsForTesting(r *MockRows) [][]any {
-	return r.rows
-}
-
-// WillReturnError sets an error to be returned by Scan.
-func WillReturnError(r *MockRow, err error) *MockRow {
-	r.err = err
-	return r
-}
