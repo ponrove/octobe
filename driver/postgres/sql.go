@@ -87,8 +87,7 @@ func (d *sqlConn) Begin(ctx context.Context, opts ...octobe.Option[sqlConfig]) (
 
 // Close will close the database connection.
 func (d *sqlConn) Close(_ context.Context) error {
-	d.sqlDB.Close()
-	return nil
+	return d.sqlDB.Close()
 }
 
 // Ping will ping the database connection to check if it is alive.
