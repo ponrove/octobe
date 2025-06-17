@@ -27,8 +27,8 @@ var (
 	_ pgx.Tx           = (*PGXMock)(nil)
 )
 
-// NewMock creates a new mock connection.
-func NewMock() *PGXMock {
+// NewPGXMock creates a new mock connection.
+func NewPGXMock() *PGXMock {
 	return &PGXMock{}
 }
 
@@ -183,6 +183,12 @@ func (m *PGXMock) QueryRow(ctx context.Context, query string, args ...any) pgx.R
 		return &MockRow{err: err}
 	}
 	ret := e.getReturns()
+	if len(ret) >= 2 && ret[1] != nil {
+		return &MockRow{err: ret[1].(error)}
+	}
+	if ret[0] == nil {
+		return nil
+	}
 	return ret[0].(pgx.Row)
 }
 
@@ -208,8 +214,9 @@ func (m *PGXMock) Begin(ctx context.Context) (pgx.Tx, error) {
 	return m, nil
 }
 
-func (m *PGXMock) ExpectBeginTx() *BeginTxExpectation {
-	e := &BeginTxExpectation{basicExpectation: basicExpectation{method: "BeginTx"}}
+func (m *PGXMock) ExpectBeginTx(txOptions postgres.PGXTxOptions) *PGXBeginTxExpectation {
+	e := &PGXBeginTxExpectation{basicExpectation: basicExpectation{method: "BeginTx"}}
+	e.WithOptions(pgx.TxOptions(txOptions))
 	m.expectations = append(m.expectations, e)
 	return e
 }

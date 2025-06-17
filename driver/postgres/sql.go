@@ -3,34 +3,42 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/ponrove/octobe"
 )
 
+var _ SQL = (*sql.DB)(nil)
+
 // SQL defines the interface for the database/sql connection.
 type SQL interface {
-	Begin() (*sql.Tx, error)
-	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
-	Close() error
+	driver.ConnBeginTx
+	driver.ExecerContext
+	driver.QueryerContext
+	driver.Conn
+	driver.ConnPrepareContext
 	PingContext(ctx context.Context) error
-	SetConnMaxLifetime(d time.Duration)
-	SetMaxIdleConns(n int)
-	SetMaxOpenConns(n int)
-	Stats() sql.DBStats
-	Exec(query string, args ...any) (sql.Result, error)
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	Prepare(query string) (*sql.Stmt, error)
-	PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
-	Query(query string, args ...any) (*sql.Rows, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRow(query string, args ...any) *sql.Row
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	/*
+		Begin() (driver.Tx, error)
+		BeginTx(context.Context, driver.TxOptions) (driver.Tx, error)
+		Close() error
+		PingContext(ctx context.Context) error
+		SetConnMaxLifetime(d time.Duration)
+		SetMaxIdleConns(n int)
+		SetMaxOpenConns(n int)
+		Stats() sql.DBStats
+		Exec(query string, args ...any) (driver.Result, error)
+		ExecContext(ctx context.Context, query string, args ...any) (driver.Result, error)
+		Prepare(query string) (driver.Stmt, error)
+		PrepareContext(ctx context.Context, query string) (driver.Stmt, error)
+		Query(query string, args ...any) (driver.Rows, error)
+		QueryContext(ctx context.Context, query string, args ...any) (driver.Rows, error)
+		QueryRow(query string, args ...any) driver.Row
+		QueryRowContext(ctx context.Context, query string, args ...any) driver.Row
+	*/
 }
-
-var _ SQL = &sql.DB{} // Ensure sql.DB implements the DB interface.
 
 // sqlConn holds the connection db and default configuration for the sqlConn driver
 type sqlConn struct {
@@ -38,7 +46,7 @@ type sqlConn struct {
 }
 
 // Type check to make sure that the conn driver implements the Octobe Driver interface
-var _ octobe.Driver[sqlConn, sqlConfig, Builder] = &sqlConn{}
+var _ SQLDriver = &sqlConn{}
 
 // OpenWithConn is a function that can be used for opening a new database connection, it should always return a driver
 // with set signature of types for the local driver. This function is used when a connection db is already available.
@@ -64,10 +72,10 @@ func (d *sqlConn) Begin(ctx context.Context, opts ...octobe.Option[sqlConfig]) (
 		opt(&cfg)
 	}
 
-	var tx *sql.Tx
+	var tx driver.Tx
 	var err error
 	if cfg.txOptions != nil {
-		tx, err = d.sqlDB.BeginTx(ctx, &sql.TxOptions{
+		tx, err = d.sqlDB.BeginTx(ctx, driver.TxOptions{
 			Isolation: cfg.txOptions.Isolation,
 			ReadOnly:  cfg.txOptions.ReadOnly,
 		})
@@ -105,7 +113,7 @@ func (d *sqlConn) Ping(ctx context.Context) error {
 type sqlSession struct {
 	ctx       context.Context
 	cfg       sqlConfig
-	tx        *sql.Tx
+	tx        driver.Tx
 	d         *sqlConn
 	committed bool
 }
@@ -146,16 +154,22 @@ func (s *sqlSession) Builder() Builder {
 	}
 }
 
+type txContext interface {
+	driver.Tx
+	driver.ExecerContext
+	driver.QueryerContext
+}
+
 // Segment is a specific query that can be run only once it keeps a few fields for keeping track on the Segment
 type sqlSegment struct {
 	// query in SQL that is going to be executed
 	query string
 	// args include argument values
-	args []any
+	args []driver.NamedValue
 	// used specify if this Segment already has been executed
 	used bool
 	// tx is the database transaction, initiated by BeginTx
-	tx *sql.Tx
+	tx txContext
 	// d is the driver that is used for the session
 	d *sqlConn
 	// ctx is a context that can be used to interrupt a query
@@ -170,7 +184,7 @@ func (s *sqlSegment) use() {
 }
 
 // Arguments receives unknown amount of arguments to use in the query
-func (s *sqlSegment) Arguments(args ...any) Segment {
+func (s *sqlSegment) Arguments(args ...driver.NamedValue) Segment {
 	s.args = args
 	return s
 }
@@ -182,7 +196,7 @@ func (s *sqlSegment) Exec() (ExecResult, error) {
 	}
 	defer s.use()
 	if s.tx == nil {
-		res, err := s.d.sqlDB.ExecContext(s.ctx, s.query, s.args...)
+		res, err := s.d.sqlDB.ExecContext(s.ctx, s.query, s.args)
 		if err != nil {
 			return ExecResult{}, err
 		}
@@ -198,7 +212,7 @@ func (s *sqlSegment) Exec() (ExecResult, error) {
 	}
 
 	// If we have a transaction, we execute the query in the transaction context
-	res, err := s.tx.ExecContext(s.ctx, s.query, s.args...)
+	res, err := s.tx.ExecContext(s.ctx, s.query, s.args)
 	if err != nil {
 		return ExecResult{}, err
 	}
@@ -233,7 +247,7 @@ func (s *sqlSegment) Query(cb func(Rows) error) error {
 	defer s.use()
 
 	var err error
-	var rows *sql.Rows
+	var rows *driver.Rows
 	if s.tx == nil {
 		rows, err = s.d.sqlDB.QueryContext(s.ctx, s.query, s.args...)
 		if err != nil {

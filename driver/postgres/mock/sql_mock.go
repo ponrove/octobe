@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"regexp"
 	"sync"
@@ -123,7 +124,7 @@ func (r *sqlResult) RowsAffected() (int64, error) {
 }
 
 // NewSQLResult creates a new sql.Result for Exec results.
-func NewSQLResult(lastInsertID, rowsAffected int64) sql.Result {
+func NewSQLResult(lastInsertID, rowsAffected int64) driver.Result {
 	return &sqlResult{lastInsertID: lastInsertID, rowsAffected: rowsAffected}
 }
 
@@ -175,8 +176,8 @@ func (m *SQLMock) Exec(query string, args ...any) (sql.Result, error) {
 // Query
 // ----------------------------------------------------------------------------
 
-func (m *SQLMock) ExpectQuery(query string) *SQLQueryExpectation {
-	e := &SQLQueryExpectation{
+func (m *SQLMock) ExpectQuery(query string) *QueryExpectation {
+	e := &QueryExpectation{
 		basicExpectation: basicExpectation{
 			method: "QueryContext",
 			query:  regexp.MustCompile(regexp.QuoteMeta(query)),
@@ -184,23 +185,6 @@ func (m *SQLMock) ExpectQuery(query string) *SQLQueryExpectation {
 	}
 	m.expectations = append(m.expectations, e)
 	return e
-}
-
-type SQLQueryExpectation struct {
-	basicExpectation
-}
-
-func (e *SQLQueryExpectation) WithArgs(args ...any) *SQLQueryExpectation {
-	e.basicExpectation.WithArgs(args...)
-	return e
-}
-
-func (e *SQLQueryExpectation) WillReturnRows(rows *sql.Rows) {
-	e.returns = []any{rows, nil}
-}
-
-func (e *SQLQueryExpectation) WillReturnError(err error) {
-	e.returns = []any{nil, err}
 }
 
 func (m *SQLMock) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -297,17 +281,52 @@ func (m *SQLMock) ExpectBeginTx() *SQLBeginTxExpectation {
 	return e
 }
 
-type SQLBeginTxExpectation struct{ basicExpectation }
+func (m *SQLMock) BeginTx(ctx context.Context, txOptions *sql.TxOptions) (*sql.Tx, error) {
+	e, err := m.findExpectation("BeginTx", txOptions)
+	if err != nil {
+		return nil, err
+	}
+	ret := e.getReturns()
+	if len(ret) > 1 && ret[1] != nil {
+		return nil, ret[1].(error)
+	}
+	return &sql.Tx{}, nil
+}
 
-func (e *SQLBeginTxExpectation) WithOptions(opts sql.TxOptions) *SQLBeginTxExpectation {
-	e.args = []any{opts}
+func (m *SQLMock) ExpectCommit() *CommitExpectation {
+	e := &CommitExpectation{basicExpectation: basicExpectation{method: "Commit"}}
+	m.expectations = append(m.expectations, e)
 	return e
 }
 
-func (e *SQLBeginTxExpectation) WillReturnError(err error) { e.returns = []any{nil, err} }
+func (m *SQLMock) Commit(ctx context.Context) error {
+	e, err := m.findExpectation("Commit")
+	if err != nil {
+		return err
+	}
+	ret := e.getReturns()
+	if len(ret) > 0 && ret[0] != nil {
+		return ret[0].(error)
+	}
+	return nil
+}
 
-func (m *SQLMock) BeginTx(ctx context.Context, txOptions *sql.TxOptions) (*sql.Tx, error) {
-	panic("mocking transactions for database/sql is not supported without a mock driver")
+func (m *SQLMock) ExpectRollback() *RollbackExpectation {
+	e := &RollbackExpectation{basicExpectation: basicExpectation{method: "Rollback"}}
+	m.expectations = append(m.expectations, e)
+	return e
+}
+
+func (m *SQLMock) Rollback(ctx context.Context) error {
+	e, err := m.findExpectation("Rollback")
+	if err != nil {
+		return err
+	}
+	ret := e.getReturns()
+	if len(ret) > 0 && ret[0] != nil {
+		return ret[0].(error)
+	}
+	return nil
 }
 
 // ----------------------------------------------------------------------------

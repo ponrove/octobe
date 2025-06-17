@@ -24,6 +24,21 @@ ClickHouse, the way you structure your code remains the same.
 - **Boilerplate Reduction**: Simplifies transaction and session management with `StartTransaction`.
 - **Handler Pattern**: Organizes your SQL logic into clean, reusable, and testable units.
 - **Driver Agnostic**: Provides a consistent developer experience for different databases.
+- **Mocking Support**: Built-in mock clients for testing your database logic without a live connection.
+
+## Supported drivers
+
+### Postgres
+
+- **Driver**: [github.com/jackc/pgx/v5/pgxpool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)
+- **Driver**: [github.com/jackc/pgx/v5](https://pkg.go.dev/github.com/jackc/pgx/v5)
+- **Driver**: [database/sql](https://pkg.go.dev/database/sql)
+- **Mock**: [github.com/ponrove/octobe/driver/postgres/mock](https://pkg.go.dev/github.com/ponrove/octobe/driver/postgres/mock)
+
+### ClickHouse
+
+- **Driver**: [github.com/ClickHouse/clickhouse-go/v2](https://pkg.go.dev/github.com/ClickHouse/clickhouse-go/v2)
+- **Mock**: [github.com/ponrove/octobe/driver/clickhouse/mock](https://pkg.go.dev/github.com/ponrove/octobe/driver/clickhouse/mock)
 
 ## Usage
 

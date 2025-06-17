@@ -175,7 +175,7 @@ func TestPoolMock(t *testing.T) {
 		require.NoError(t, err)
 
 		txOpts := postgres.PGXTxOptions{}
-		mock.ExpectBeginTx()
+		mock.ExpectBeginTx(txOpts)
 		mock.ExpectCommit()
 
 		session, err := o.Begin(ctx, postgres.WithPGXTxOptions(txOpts))
@@ -193,7 +193,7 @@ func TestPoolMock(t *testing.T) {
 		require.NoError(t, err)
 
 		txOpts := postgres.PGXTxOptions{}
-		mock.ExpectBeginTx()
+		mock.ExpectBeginTx(txOpts)
 		query := "INSERT INTO users (name) VALUES ($1)"
 		mock.ExpectExec(query).WithArgs("test-user").WillReturnResult(pgconn.CommandTag{})
 		mock.ExpectCommit()
@@ -216,7 +216,7 @@ func TestPoolMock(t *testing.T) {
 		require.NoError(t, err)
 
 		txOpts := postgres.PGXTxOptions{}
-		mock.ExpectBeginTx()
+		mock.ExpectBeginTx(txOpts)
 		mock.ExpectRollback()
 
 		session, err := o.Begin(ctx, postgres.WithPGXTxOptions(txOpts))
