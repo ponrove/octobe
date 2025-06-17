@@ -5,30 +5,29 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/pashagolub/pgxmock/v4"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/ponrove/octobe"
 	"github.com/ponrove/octobe/driver/postgres"
+	"github.com/ponrove/octobe/driver/postgres/mock"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPGXPoolWithTxInsideStartTransaction(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
+	defer m.Close()
 	ctx := context.Background()
-	defer mock.Close()
 
 	name := "Some name"
 
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectQuery("INSERT INTO products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectQuery("SELECT id, name FROM products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectCommit()
+	m.ExpectBeginTx(postgres.PGXTxOptions{
+		IsoLevel: postgres.ReadCommitted,
+	})
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgconn.NewCommandTag(""))
+	m.ExpectQueryRow("INSERT INTO products (name) VALUES ($1) RETURNING id, name;").WithArgs(name).WillReturnRow(mock.NewMockRow(int(1), name))
+	m.ExpectQueryRow("SELECT id, name FROM products").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
+	m.ExpectCommit()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -55,33 +54,32 @@ func TestPGXPoolWithTxInsideStartTransaction(t *testing.T) {
 		assert.Equal(t, name, product2.Name)
 		assert.NotZero(t, product2.ID)
 		return nil
-	}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{}))
+	}, postgres.WithPGXTxOptions(postgres.PGXTxOptions{
+		IsoLevel: postgres.ReadCommitted,
+	}))
 
 	assert.NoError(t, err)
 
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithTx(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
+	defer m.Close()
 	ctx := context.Background()
-	defer mock.Close()
 
 	name := "Some name"
 
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectQuery("INSERT INTO products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectQuery("SELECT id, name FROM products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectCommit()
+	m.ExpectBeginTx(postgres.PGXTxOptions{})
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(mock.NewResult("", 0))
+	m.ExpectQueryRow("INSERT INTO products (name) VALUES ($1) RETURNING id, name;").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
+	m.ExpectQueryRow("SELECT id, name FROM products").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
+	m.ExpectCommit()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -120,25 +118,22 @@ func TestPGXPoolWithTx(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithoutTx(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
+	defer m.Close()
 
 	ctx := context.Background()
-	defer mock.Close()
 
 	name := "Some name"
 
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectQuery("INSERT INTO products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectQuery("SELECT id, name FROM products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(mock.NewResult("", 0))
+	m.ExpectQueryRow("INSERT INTO products (name) VALUES ($1) RETURNING id, name;").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
+	m.ExpectQueryRow("SELECT id, name FROM products").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -172,22 +167,19 @@ func TestPGXPoolWithoutTx(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithTxInsideStartTransactionRollbackOnError(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectRollback()
+	m.ExpectBeginTx(postgres.PGXTxOptions{})
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(mock.NewResult("", 0))
+	m.ExpectRollback()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -206,22 +198,19 @@ func TestPGXPoolWithTxInsideStartTransactionRollbackOnError(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithTxInsideStartTransactionRollbackOnPanic(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectRollback()
+	m.ExpectBeginTx(postgres.PGXTxOptions{})
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(mock.NewResult("", 0))
+	m.ExpectRollback()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -233,7 +222,7 @@ func TestPGXPoolWithTxInsideStartTransactionRollbackOnPanic(t *testing.T) {
 
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	}()
 
 	_ = ob.StartTransaction(ctx, func(session octobe.BuilderSession[postgres.Builder]) error {
@@ -246,21 +235,18 @@ func TestPGXPoolWithTxInsideStartTransactionRollbackOnPanic(t *testing.T) {
 }
 
 func TestPGXPoolWithTxManualRollback(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
 	name := "Some name"
 
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(pgxmock.NewResult("", 0))
-	mock.ExpectQuery("INSERT INTO products").WithArgs(name).WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
-	mock.ExpectRollback()
+	m.ExpectBeginTx(postgres.PGXTxOptions{})
+	m.ExpectExec("CREATE TABLE IF NOT EXISTS products").WillReturnResult(mock.NewResult("", 0))
+	m.ExpectQueryRow("INSERT INTO products (name) VALUES ($1) RETURNING id, name;").WithArgs(name).WillReturnRow(mock.NewMockRow(1, name))
+	m.ExpectRollback()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -288,18 +274,15 @@ func TestPGXPoolWithTxManualRollback(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithoutTxCommit(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -316,18 +299,15 @@ func TestPGXPoolWithoutTxCommit(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolWithoutTxRollback(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -344,21 +324,18 @@ func TestPGXPoolWithoutTxRollback(t *testing.T) {
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
 
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolSegmentUsedTwice(t *testing.T) {
 	t.Run("Exec", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
-		mock.ExpectExec("CREATE TABLE").WillReturnResult(pgxmock.NewResult("", 0))
+		m.ExpectExec("CREATE TABLE").WillReturnResult(mock.NewResult("", 0))
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -385,22 +362,19 @@ func TestPGXPoolSegmentUsedTwice(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("QueryRow", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		name := "Some name"
 
-		mock.ExpectQuery("SELECT").WillReturnRows(pgxmock.NewRows([]string{"id", "name"}).AddRow(1, name))
+		m.ExpectQueryRow("SELECT").WillReturnRow(mock.NewMockRow(1, name))
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -428,20 +402,17 @@ func TestPGXPoolSegmentUsedTwice(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("Query", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
-		mock.ExpectQuery("SELECT").WillReturnRows(pgxmock.NewRows([]string{"id", "name"}))
+		m.ExpectQuery("SELECT").WillReturnRows(mock.NewMockRows([]string{"id", "name"}))
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -472,7 +443,7 @@ func TestPGXPoolSegmentUsedTwice(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 }
 
@@ -483,17 +454,14 @@ func TestOpenPGXPoolWithPoolNil(t *testing.T) {
 }
 
 func TestPGXPoolBeginError(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
 	expectedErr := errors.New("begin error")
-	mock.ExpectBeginTx(pgx.TxOptions{}).WillReturnError(expectedErr)
+	m.ExpectBeginTx(postgres.PGXTxOptions{}).WillReturnError(expectedErr)
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -503,22 +471,19 @@ func TestPGXPoolBeginError(t *testing.T) {
 
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolCommitError(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if !assert.NoError(t, err) {
-		t.FailNow()
-	}
+	m := mock.NewPGXPoolMock()
 	ctx := context.Background()
-	defer mock.Close()
+	defer m.Close()
 
 	expectedErr := errors.New("commit error")
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectCommit().WillReturnError(expectedErr)
+	m.ExpectBeginTx(postgres.PGXTxOptions{})
+	m.ExpectCommit().WillReturnError(expectedErr)
 
-	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+	ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 	if !assert.NoError(t, err) {
 		t.FailNow()
 	}
@@ -533,22 +498,19 @@ func TestPGXPoolCommitError(t *testing.T) {
 
 	err = ob.Close(ctx)
 	assert.NoError(t, err)
-	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.NoError(t, m.AllExpectationsMet())
 }
 
 func TestPGXPoolSegmentExecError(t *testing.T) {
 	t.Run("without tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("exec error")
-		mock.ExpectExec("INSERT").WillReturnError(expectedErr)
+		m.ExpectExec("INSERT").WillReturnError(expectedErr)
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -568,23 +530,20 @@ func TestPGXPoolSegmentExecError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("with tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("exec error")
-		mock.ExpectBeginTx(pgx.TxOptions{})
-		mock.ExpectExec("INSERT").WillReturnError(expectedErr)
-		mock.ExpectRollback()
+		m.ExpectBeginTx(postgres.PGXTxOptions{})
+		m.ExpectExec("INSERT").WillReturnError(expectedErr)
+		m.ExpectRollback()
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -603,23 +562,20 @@ func TestPGXPoolSegmentExecError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 }
 
 func TestPGXPoolSegmentQueryRowError(t *testing.T) {
 	t.Run("without tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("query row error")
-		mock.ExpectQuery("SELECT").WillReturnError(expectedErr)
+		m.ExpectQueryRow("SELECT").WillReturnError(expectedErr)
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -640,23 +596,20 @@ func TestPGXPoolSegmentQueryRowError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("with tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("query row error")
-		mock.ExpectBeginTx(pgx.TxOptions{})
-		mock.ExpectQuery("SELECT").WillReturnError(expectedErr)
-		mock.ExpectRollback()
+		m.ExpectBeginTx(postgres.PGXTxOptions{})
+		m.ExpectQueryRow("SELECT").WillReturnError(expectedErr)
+		m.ExpectRollback()
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -676,23 +629,20 @@ func TestPGXPoolSegmentQueryRowError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 }
 
 func TestPGXPoolSegmentQueryError(t *testing.T) {
 	t.Run("query error without tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("query error")
-		mock.ExpectQuery("SELECT").WillReturnError(expectedErr)
+		m.ExpectQuery("SELECT").WillReturnError(expectedErr)
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -712,23 +662,20 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("query error with tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("query error")
-		mock.ExpectBeginTx(pgx.TxOptions{})
-		mock.ExpectQuery("SELECT").WillReturnError(expectedErr)
-		mock.ExpectRollback()
+		m.ExpectBeginTx(postgres.PGXTxOptions{})
+		m.ExpectQuery("SELECT").WillReturnError(expectedErr)
+		m.ExpectRollback()
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -747,21 +694,18 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("callback error without tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("callback error")
-		mock.ExpectQuery("SELECT").WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(1))
+		m.ExpectQuery("SELECT").WillReturnRows(mock.NewMockRows([]string{"id"}).AddRow(1))
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -781,23 +725,20 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 
 	t.Run("callback error with tx", func(t *testing.T) {
-		mock, err := pgxmock.NewPool()
-		if !assert.NoError(t, err) {
-			t.FailNow()
-		}
+		m := mock.NewPGXPoolMock()
 		ctx := context.Background()
-		defer mock.Close()
+		defer m.Close()
 
 		expectedErr := errors.New("callback error")
-		mock.ExpectBeginTx(pgx.TxOptions{})
-		mock.ExpectQuery("SELECT").WillReturnRows(pgxmock.NewRows([]string{"id"}).AddRow(1))
-		mock.ExpectRollback()
+		m.ExpectBeginTx(postgres.PGXTxOptions{})
+		m.ExpectQuery("SELECT").WillReturnRows(mock.NewMockRows([]string{"id"}).AddRow(1))
+		m.ExpectRollback()
 
-		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(mock))
+		ob, err := octobe.New(postgres.OpenPGXPoolWithPool(m))
 		if !assert.NoError(t, err) {
 			t.FailNow()
 		}
@@ -816,6 +757,6 @@ func TestPGXPoolSegmentQueryError(t *testing.T) {
 		err = ob.Close(ctx)
 		assert.NoError(t, err)
 
-		assert.NoError(t, mock.ExpectationsWereMet())
+		assert.NoError(t, m.AllExpectationsMet())
 	})
 }

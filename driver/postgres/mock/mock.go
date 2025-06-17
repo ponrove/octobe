@@ -1,11 +1,13 @@
 package mock
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"regexp"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -136,7 +138,7 @@ func (e *QueryExpectation) WithArgs(args ...any) *QueryExpectation {
 	return e
 }
 
-func (e *QueryExpectation) WillReturnRows(rows pgx.Rows) {
+func (e *QueryExpectation) WillReturnRows(rows *MockRows) {
 	e.returns = []any{rows, nil}
 }
 
@@ -161,6 +163,10 @@ func (e *QueryRowExpectation) WillReturnRow(row pgx.Row) {
 	e.returns = []any{row}
 }
 
+func (e *QueryRowExpectation) WillReturnError(err error) {
+	e.returns = []any{nil, err}
+}
+
 // ----------------------------------------------------------------------------
 // Transactions
 // ----------------------------------------------------------------------------
@@ -169,14 +175,14 @@ type BeginExpectation struct{ basicExpectation }
 
 func (e *BeginExpectation) WillReturnError(err error) { e.returns = []any{nil, err} }
 
-type BeginTxExpectation struct{ basicExpectation }
+type PGXBeginTxExpectation struct{ basicExpectation }
 
-func (e *BeginTxExpectation) WithOptions(opts pgx.TxOptions) *BeginTxExpectation {
+func (e *PGXBeginTxExpectation) WithOptions(opts pgx.TxOptions) *PGXBeginTxExpectation {
 	e.args = []any{opts}
 	return e
 }
 
-func (e *BeginTxExpectation) WillReturnError(err error) { e.returns = []any{nil, err} }
+func (e *PGXBeginTxExpectation) WillReturnError(err error) { e.returns = []any{nil, err} }
 
 type CommitExpectation struct{ basicExpectation }
 
@@ -185,6 +191,85 @@ func (e *CommitExpectation) WillReturnError(err error) { e.returns = []any{err} 
 type RollbackExpectation struct{ basicExpectation }
 
 func (e *RollbackExpectation) WillReturnError(err error) { e.returns = []any{err} }
+
+type SQLBeginTxExpectation struct{ basicExpectation }
+
+func (e *SQLBeginTxExpectation) WithOptions(opts sql.TxOptions) *SQLBeginTxExpectation {
+	e.args = []any{opts}
+	return e
+}
+
+func (e *SQLBeginTxExpectation) WillReturnError(err error) { e.returns = []any{nil, err} }
+
+// ----------------------------------------------------------------------------
+// Conversion Helper
+// ----------------------------------------------------------------------------
+
+func assign(dest, src any) error {
+	dst := reflect.ValueOf(dest)
+	if dst.Kind() != reflect.Ptr {
+		return errors.New("destination must be a pointer")
+	}
+	dst = dst.Elem()
+
+	if src == nil {
+		dst.Set(reflect.Zero(dst.Type()))
+		return nil
+	}
+
+	srcVal := reflect.ValueOf(src)
+
+	// Direct assignment
+	if srcVal.Type().AssignableTo(dst.Type()) {
+		dst.Set(srcVal)
+		return nil
+	}
+
+	// Conversion
+	if srcVal.Type().ConvertibleTo(dst.Type()) {
+		dst.Set(srcVal.Convert(dst.Type()))
+		return nil
+	}
+
+	// String/[]byte to something else
+	switch s := src.(type) {
+	case string:
+		switch dst.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			i, err := strconv.ParseInt(s, 10, dst.Type().Bits())
+			if err != nil {
+				return fmt.Errorf("could not convert string %q to int: %v", s, err)
+			}
+			dst.SetInt(i)
+			return nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			u, err := strconv.ParseUint(s, 10, dst.Type().Bits())
+			if err != nil {
+				return fmt.Errorf("could not convert string %q to uint: %v", s, err)
+			}
+			dst.SetUint(u)
+			return nil
+		case reflect.Float32, reflect.Float64:
+			f, err := strconv.ParseFloat(s, dst.Type().Bits())
+			if err != nil {
+				return fmt.Errorf("could not convert string %q to float: %v", s, err)
+			}
+			dst.SetFloat(f)
+			return nil
+		case reflect.Bool:
+			b, err := strconv.ParseBool(s)
+			if err != nil {
+				return fmt.Errorf("could not convert string %q to bool: %v", s, err)
+			}
+			dst.SetBool(b)
+			return nil
+		}
+	case []byte:
+		return assign(dest, string(s))
+	}
+
+	return fmt.Errorf("can't scan value of type %T into %T", src, dest)
+}
 
 // ----------------------------------------------------------------------------
 // Mock Row
@@ -208,8 +293,13 @@ func (r *MockRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	for i, val := range r.row {
-		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(val))
+	if len(dest) != len(r.row) {
+		return fmt.Errorf("destination count %d does not match row column count %d", len(dest), len(r.row))
+	}
+	for i, d := range dest {
+		if err := assign(d, r.row[i]); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -268,8 +358,13 @@ func (r *MockRows) Scan(dest ...any) error {
 	if r.pos < 0 || r.pos >= len(r.rows) {
 		return io.EOF
 	}
-	for i, val := range r.rows[r.pos] {
-		reflect.ValueOf(dest[i]).Elem().Set(reflect.ValueOf(val))
+	if len(dest) != len(r.fields) {
+		return fmt.Errorf("destination count %d does not match row column count %d", len(dest), len(r.fields))
+	}
+	for i, d := range dest {
+		if err := assign(d, r.rows[r.pos][i]); err != nil {
+			return err
+		}
 	}
 	return nil
 }

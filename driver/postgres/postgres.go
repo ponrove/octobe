@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"database/sql"
+	"database/sql/driver"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/ponrove/octobe"
@@ -19,8 +20,28 @@ type Builder func(query string) Segment
 // PGXTxOptions holds the options for a transaction.
 type PGXTxOptions pgx.TxOptions
 
+// Transaction isolation levels
+const (
+	Serializable    pgx.TxIsoLevel = pgx.Serializable
+	RepeatableRead  pgx.TxIsoLevel = pgx.RepeatableRead
+	ReadCommitted   pgx.TxIsoLevel = pgx.ReadCommitted
+	ReadUncommitted pgx.TxIsoLevel = pgx.ReadUncommitted
+)
+
+// Transaction access modes
+const (
+	ReadWrite pgx.TxAccessMode = pgx.ReadWrite
+	ReadOnly  pgx.TxAccessMode = pgx.ReadOnly
+)
+
+// Transaction deferrable modes
+const (
+	Deferrable    pgx.TxDeferrableMode = pgx.Deferrable
+	NotDeferrable pgx.TxDeferrableMode = pgx.NotDeferrable
+)
+
 // SQLTxOptions holds the options for a transaction in the sql driver.
-type SQLTxOptions sql.TxOptions
+type SQLTxOptions driver.TxOptions
 
 // pgxConfig defines various configurations possible for the pgx driver.
 type pgxConfig struct {
@@ -60,7 +81,7 @@ type Segment interface {
 	Arguments(args ...any) Segment
 	Exec() (ExecResult, error)
 	QueryRow(dest ...any) error
-	Query(cb func(Rows) error) error
+	Query(cb func(driver.Rows) error) error
 }
 
 // ExecResult is a struct that holds the result of an execution, specifically the number of rows affected by the query.

@@ -10,16 +10,14 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/ponrove/octobe"
 	"github.com/ponrove/octobe/driver/postgres"
+	"github.com/ponrove/octobe/driver/postgres/mock"
 )
 
 func TestSQLWithTxInsideStartTransaction(t *testing.T) {
 	t.Parallel()
 
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-	}
-	defer db.Close()
+	m := mock.NewSQLMock()
+	defer m.Close()
 
 	var (
 		id    = 1
@@ -27,13 +25,13 @@ func TestSQLWithTxInsideStartTransaction(t *testing.T) {
 		query = "SELECT id, name FROM users WHERE id = \\$1"
 	)
 
-	rows := sqlmock.NewRows([]string{"id", "name"}).AddRow(id, name)
+	rows := mock.NewMockRows([]string{"id", "name"}).AddRow(id, name)
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(1).WillReturnRows(rows)
-	mock.ExpectCommit()
+	m.ExpectBegin()
+	m.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(1).WillReturnRows(rows)
+	m.ExpectCommit()
 
-	open := postgres.OpenWithConn(db)
+	open := postgres.OpenWithConn(m)
 	instance, err := octobe.New(open)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +56,7 @@ func TestSQLWithTxInsideStartTransaction(t *testing.T) {
 		t.Errorf("expected name %s, got %s", name, destName)
 	}
 
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err := m.AllExpectationsMet(); err != nil {
 		t.Errorf("there were unfulfilled expectations: %s", err)
 	}
 }

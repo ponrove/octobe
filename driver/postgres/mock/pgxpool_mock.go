@@ -181,6 +181,12 @@ func (m *PGXPoolMock) QueryRow(ctx context.Context, query string, args ...any) p
 		return &MockRow{err: err}
 	}
 	ret := e.getReturns()
+	if len(ret) >= 2 && ret[1] != nil {
+		return &MockRow{err: ret[1].(error)}
+	}
+	if ret[0] == nil {
+		return nil
+	}
 	return ret[0].(pgx.Row)
 }
 
@@ -206,8 +212,9 @@ func (m *PGXPoolMock) Begin(ctx context.Context) (pgx.Tx, error) {
 	return m, nil
 }
 
-func (m *PGXPoolMock) ExpectBeginTx() *BeginTxExpectation {
-	e := &BeginTxExpectation{basicExpectation: basicExpectation{method: "BeginTx"}}
+func (m *PGXPoolMock) ExpectBeginTx(txOptions postgres.PGXTxOptions) *PGXBeginTxExpectation {
+	e := &PGXBeginTxExpectation{basicExpectation: basicExpectation{method: "BeginTx"}}
+	e.WithOptions(pgx.TxOptions(txOptions))
 	m.expectations = append(m.expectations, e)
 	return e
 }
